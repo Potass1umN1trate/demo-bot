@@ -5,7 +5,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
 from app.states import BookingFlow
-from app.keyboards import services_kb, date_kb, time_kb, confirm_kb
+from app.keyboards import services_kb, date_kb, time_kb, confirm_kb, date_pick_kb
 from app.texts import (
     ASK_SERVICE, ASK_DATE, ASK_TIME, ASK_NAME, ASK_PHONE,
     CONFIRM_TEMPLATE, BOOKED_USER, CANCELLED
@@ -70,27 +70,21 @@ async def pick_date(call: CallbackQuery, state: FSMContext):
 
     # Выбрать дату -> просим ввести вручную (быстро и честно для демо)
     if key == "pick":
-        await state.set_state(BookingFlow.date)  # остаёмся в этом стейте, ждём текст
-        await call.message.edit_text("Введите дату в формате ДД.ММ.ГГГГ (например 18.02.2026):")
+        await call.message.edit_text(
+            "Выберите дату из ближайших дней:",
+            reply_markup=date_pick_kb(days=7, start_from_tomorrow=True)
+        )
         await call.answer()
         return
 
-    await call.answer("Неизвестный выбор даты.")
-
-
-@router.message(BookingFlow.date)
-async def manual_date(message: Message, state: FSMContext):
-    txt = (message.text or "").strip()
-
-    # Мини-валидация формата: ДД.ММ.ГГГГ
-    if len(txt) != 10 or txt[2] != "." or txt[5] != ".":
-        await message.answer("Формат даты должен быть ДД.ММ.ГГГГ. Попробуйте ещё раз:")
+    if key == "back":
+        # вернуться к базовому выбору даты
+        await call.message.edit_text(ASK_DATE, reply_markup=date_kb())
+        await call.answer()
         return
 
-    await state.update_data(date=txt)
-    await state.set_state(BookingFlow.time)
-    await message.answer(ASK_TIME, reply_markup=time_kb())
 
+    await call.answer("Неизвестный выбор даты.")
 
 @router.callback_query(BookingFlow.time, F.data.startswith("time:"))
 async def pick_time(call: CallbackQuery, state: FSMContext):
@@ -180,3 +174,16 @@ async def confirm(call: CallbackQuery, state: FSMContext, bot: Bot):
     await bot.send_message(chat_id=config.admin_id, text=admin_text)
 
     await state.clear()
+
+@router.callback_query(BookingFlow.date, F.data.startswith("datepick:"))
+async def pick_date_from_calendar(call: CallbackQuery, state: FSMContext):
+    iso = call.data.split(":", 1)[1]  # YYYY-MM-DD
+    # Для пользователя отображаем привычно
+    y, m, d = iso.split("-")
+    date_str = f"{d}.{m}.{y}"
+
+    await state.update_data(date=date_str)
+    await state.set_state(BookingFlow.time)
+
+    await call.message.edit_text(ASK_TIME, reply_markup=time_kb())
+    await call.answer()
