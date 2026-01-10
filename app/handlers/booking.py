@@ -5,7 +5,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
 from app.states import BookingFlow
-from app.keyboards import services_kb, date_kb, time_kb, confirm_kb, date_pick_kb
+from app.keyboards import services_kb, date_kb, time_kb, confirm_kb, week_picker_kb
 from app.texts import (
     ASK_SERVICE, ASK_DATE, ASK_TIME, ASK_NAME, ASK_PHONE,
     CONFIRM_TEMPLATE, BOOKED_USER, CANCELLED
@@ -68,20 +68,19 @@ async def pick_date(call: CallbackQuery, state: FSMContext):
         await call.answer()
         return
 
-    # Выбрать дату -> просим ввести вручную (быстро и честно для демо)
     if key == "pick":
         await call.message.edit_text(
-            "Выберите дату из ближайших дней:",
-            reply_markup=date_pick_kb(days=7, start_from_tomorrow=True)
+            "Выберите дату (можно пролистать недели):",
+            reply_markup=week_picker_kb(page=0, weeks_ahead=3)
         )
         await call.answer()
         return
 
     if key == "back":
-        # вернуться к базовому выбору даты
         await call.message.edit_text(ASK_DATE, reply_markup=date_kb())
         await call.answer()
         return
+
 
 
     await call.answer("Неизвестный выбор даты.")
@@ -178,7 +177,6 @@ async def confirm(call: CallbackQuery, state: FSMContext, bot: Bot):
 @router.callback_query(BookingFlow.date, F.data.startswith("datepick:"))
 async def pick_date_from_calendar(call: CallbackQuery, state: FSMContext):
     iso = call.data.split(":", 1)[1]  # YYYY-MM-DD
-    # Для пользователя отображаем привычно
     y, m, d = iso.split("-")
     date_str = f"{d}.{m}.{y}"
 
@@ -186,4 +184,10 @@ async def pick_date_from_calendar(call: CallbackQuery, state: FSMContext):
     await state.set_state(BookingFlow.time)
 
     await call.message.edit_text(ASK_TIME, reply_markup=time_kb())
+    await call.answer()
+
+@router.callback_query(BookingFlow.date, F.data.startswith("week:"))
+async def switch_week(call: CallbackQuery, state: FSMContext):
+    page = int(call.data.split(":", 1)[1])
+    await call.message.edit_reply_markup(reply_markup=week_picker_kb(page=page, weeks_ahead=3))
     await call.answer()

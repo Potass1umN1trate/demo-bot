@@ -50,27 +50,73 @@ def confirm_kb() -> InlineKeyboardMarkup:
     kb.adjust(2)
     return kb.as_markup()
 
-def date_pick_kb(days: int = 7, start_from_tomorrow: bool = True) -> InlineKeyboardMarkup:
+def _fmt_day_button(d: date) -> str:
+    dow = RU_DOW.get(d.strftime("%a"), d.strftime("%a"))
+    return f"{dow} {d.strftime('%d.%m')}"
+
+
+def week_picker_kb(page: int = 0, weeks_ahead: int = 3) -> InlineKeyboardMarkup:
     """
-    Мини-календарь на N дней.
-    callback_data: datepick:YYYY-MM-DD
+    Календарь по неделям:
+    - page=0: текущая неделя (сегодня..вс)
+    - page=1..weeks_ahead: полные недели (пн..вс)
+    Всего страниц: 0..weeks_ahead
     """
-    start = date.today() + timedelta(days=1 if start_from_tomorrow else 0)
+    if page < 0:
+        page = 0
+    if page > weeks_ahead:
+        page = weeks_ahead
+
+    today = date.today()
+
+    # Находим понедельник текущей недели
+    this_monday = today - timedelta(days=today.weekday())  # weekday: Mon=0..Sun=6
+
+    if page == 0:
+        start = today
+        # воскресенье текущей недели
+        end = this_monday + timedelta(days=6)
+    else:
+        start = this_monday + timedelta(days=7 * page)
+        end = start + timedelta(days=6)
 
     kb = InlineKeyboardBuilder()
-    for i in range(days):
-        d = start + timedelta(days=i)
-        # Читабельный текст на кнопке: "Пн 12.01"
-        dow = d.strftime("%a")  # Mon
-        label = f"{RU_DOW.get(dow, dow)} {d.strftime('%d.%m')}"
-        # Если хочешь русские дни недели — ниже сделаем маппинг (не обязательно)
-        kb.button(text=label, callback_data=f"datepick:{d.isoformat()}")
 
-    # 2 ряда (4 + 3) выглядят аккуратно
-    kb.adjust(4, 3)
+    # дни недели
+    d = start
+    while d <= end:
+        kb.button(text=_fmt_day_button(d), callback_data=f"datepick:{d.isoformat()}")
+        d += timedelta(days=1)
 
-    # Кнопка назад — чтобы не было тупика
-    kb.button(text="⬅️ Назад", callback_data="date:back")
-    kb.adjust(4, 3, 1)
+    # на первой странице может быть 1..7 дней; на остальных всегда 7
+    # разложение по рядам выглядит аккуратно:
+    # - если 4-7 кнопок: 4 + остаток
+    # - если 1-3 кнопки: 3
+    count = (end - start).days + 1
+    if count >= 7:
+        kb.adjust(4, 3)
+    elif count == 6:
+        kb.adjust(3, 3)
+    elif count == 5:
+        kb.adjust(3, 2)
+    elif count == 4:
+        kb.adjust(2, 2)
+    else:
+        kb.adjust(3)
+
+    # навигация
+    nav = InlineKeyboardBuilder()
+    if page > 0:
+        nav.button(text="⬅️ Пред. неделя", callback_data=f"week:{page-1}")
+    if page < weeks_ahead:
+        nav.button(text="След. неделя ➡️", callback_data=f"week:{page+1}")
+
+    # кнопка "назад к простому выбору"
+    nav.button(text="⬅️ Назад", callback_data="date:back")
+
+    # навигацию делаем одной строкой (сколько влезет)
+    nav.adjust(2, 1)  # может получиться: [prev, next] и потом [back]
+    for row in nav.export():
+        kb.row(*row)
 
     return kb.as_markup()
