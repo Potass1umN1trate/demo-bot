@@ -11,7 +11,7 @@ from app.texts import (
     CONFIRM_TEMPLATE, BOOKED_USER, CANCELLED
 )
 from app.config import load_config
-from app.db import insert_booking
+from app.db import insert_booking, count_bookings_for_slot
 
 router = Router()
 config = load_config()  # для демо нормально: один конфиг на процесс
@@ -22,6 +22,37 @@ SERVICE_LABELS = {
     "paddle_ind": "🏓 Падел (индивидуальная)",
     "fitness": "🏋️ Фитнес",
 }
+
+CAPACITY = {
+    "🏓 Падел (групповая)": 3,
+    "🏓 Падел (индивидуальная)": 1,
+    "🏋️ Фитнес": 10,
+}
+
+TIME_SLOTS = [f"{h:02d}:00" for h in range(10, 23)]  # 10..22 включительно
+
+async def show_available_times(message, state: FSMContext):
+    data = await state.get_data()
+    service = data["service"]
+    date_str = data["date"]
+
+    cap = CAPACITY.get(service, 1)
+
+    available = []
+    for t in TIME_SLOTS:
+        used = count_bookings_for_slot(config.db_path, service, date_str, t)
+        if used < cap:
+            available.append(t)
+
+    if not available:
+        await message.edit_text(
+            "😕 На выбранную дату мест уже нет. Выберите другую дату:",
+            reply_markup=week_picker_kb(page=0, weeks_ahead=3)  # если ты уже внедрил недельный календарь
+        )
+        return
+
+    await state.set_state(BookingFlow.time)
+    await message.edit_text(ASK_TIME, reply_markup=time_kb(available))
 
 
 @router.message(F.text == "📅 Записаться на тренировку")
@@ -54,8 +85,7 @@ async def pick_date(call: CallbackQuery, state: FSMContext):
         d = date.today()
         date_str = d.strftime("%d.%m.%Y")
         await state.update_data(date=date_str)
-        await state.set_state(BookingFlow.time)
-        await call.message.edit_text(ASK_TIME, reply_markup=time_kb())
+        await show_available_times(call.message, state)
         await call.answer()
         return
 
@@ -63,8 +93,7 @@ async def pick_date(call: CallbackQuery, state: FSMContext):
         d = date.today() + timedelta(days=1)
         date_str = d.strftime("%d.%m.%Y")
         await state.update_data(date=date_str)
-        await state.set_state(BookingFlow.time)
-        await call.message.edit_text(ASK_TIME, reply_markup=time_kb())
+        await show_available_times(call.message, state)
         await call.answer()
         return
 
@@ -153,6 +182,21 @@ async def confirm(call: CallbackQuery, state: FSMContext, bot: Bot):
         "phone": data["phone"],
     }
 
+    cap = CAPACITY.get(booking["service"], 1)
+    used = count_bookings_for_slot(config.db_path, booking["service"], booking["date"], booking["time"])
+    if used >= cap:
+        # слот уже заняли
+        await call.message.edit_text(
+            "⚠️ Упс! Это время только что заняли. Выберите другое:",
+            reply_markup=time_kb([
+                t for t in TIME_SLOTS
+                if count_bookings_for_slot(config.db_path, booking["service"], booking["date"], t) < cap
+            ])
+        )
+        await state.set_state(BookingFlow.time)
+        await call.answer()
+        return
+
     row_id = insert_booking(config.db_path, booking)
 
     # 1) клиенту
@@ -181,9 +225,7 @@ async def pick_date_from_calendar(call: CallbackQuery, state: FSMContext):
     date_str = f"{d}.{m}.{y}"
 
     await state.update_data(date=date_str)
-    await state.set_state(BookingFlow.time)
-
-    await call.message.edit_text(ASK_TIME, reply_markup=time_kb())
+    await show_available_times(call.message, state)
     await call.answer()
 
 @router.callback_query(BookingFlow.date, F.data.startswith("week:"))

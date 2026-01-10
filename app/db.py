@@ -47,3 +47,17 @@ def insert_booking(db_path: str, booking: Dict[str, Any]) -> int:
     row_id = cur.lastrowid
     conn.close()
     return row_id
+
+def count_bookings_for_slot(db_path: str, service: str, date_str: str, time_str: str) -> int:
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT COUNT(*)
+        FROM bookings
+        WHERE service = ? AND date = ? AND time = ?
+    """, (service, date_str, time_str))
+
+    (cnt,) = cur.fetchone()
+    conn.close()
+    return int(cnt)

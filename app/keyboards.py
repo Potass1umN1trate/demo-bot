@@ -34,14 +34,22 @@ def date_kb() -> InlineKeyboardMarkup:
     kb.adjust(2, 1)
     return kb.as_markup()
 
-
-def time_kb() -> InlineKeyboardMarkup:
+def time_kb(available_times: list[str]) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    for t in ["10:00", "11:00", "12:00"]:
-        kb.button(text=t, callback_data=f"time:{t}")
-    kb.adjust(3)
-    return kb.as_markup()
 
+    for t in available_times:
+        kb.button(text=t, callback_data=f"time:{t}")
+
+    # красиво по 4 в ряд
+    if len(available_times) >= 8:
+        kb.adjust(4, 4, 4, 4)
+    else:
+        kb.adjust(4)
+
+    kb.button(text="⬅️ Назад к дате", callback_data="date:pick")
+    kb.adjust(4, 1)
+
+    return kb.as_markup()
 
 def confirm_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
