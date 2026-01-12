@@ -13,9 +13,11 @@ from app.texts import (
 from app.config import load_config
 from app.db import insert_booking, count_bookings_for_slot
 
+from app.storage import SheetStorage, SlotFullError
+
 router = Router()
 config = load_config()  # для демо нормально: один конфиг на процесс
-
+storage = SheetStorage(config.gscript_url, config.gscript_key)
 
 SERVICE_LABELS = {
     "paddle_group": "🏓 Падел (групповая)",
@@ -36,24 +38,17 @@ async def show_available_times(message, state: FSMContext):
     service = data["service"]
     date_str = data["date"]
 
-    cap = CAPACITY.get(service, 1)
-
-    available = []
-    for t in TIME_SLOTS:
-        used = count_bookings_for_slot(config.db_path, service, date_str, t)
-        if used < cap:
-            available.append(t)
+    available = await storage.get_available_times(service, date_str)
 
     if not available:
         await message.edit_text(
             "😕 На выбранную дату мест уже нет. Выберите другую дату:",
-            reply_markup=week_picker_kb(page=0, weeks_ahead=3)  # если ты уже внедрил недельный календарь
+            reply_markup=week_picker_kb(page=0, weeks_ahead=3)
         )
         return
 
     await state.set_state(BookingFlow.time)
     await message.edit_text(ASK_TIME, reply_markup=time_kb(available))
-
 
 @router.message(F.text == "📅 Записаться на тренировку")
 async def start_booking(message: Message, state: FSMContext):
@@ -197,7 +192,25 @@ async def confirm(call: CallbackQuery, state: FSMContext, bot: Bot):
         await call.answer()
         return
 
-    row_id = insert_booking(config.db_path, booking)
+    try:
+        booking_id = await storage.create_booking({
+            "service": booking["service"],
+            "date": booking["date"],
+            "time": booking["time"],
+            "name": booking["name"],
+            "phone": booking["phone"],
+            "tg_user_id": booking["user_id"],
+            "source": "bot",
+        })
+    except SlotFullError:
+        # Кто-то (или админ) занял слот прямо сейчас
+        await call.message.edit_text(
+            "⚠️ Упс! Это время только что заняли. Выберите другое:",
+            reply_markup=time_kb(await storage.get_available_times(booking["service"], booking["date"]))
+        )
+        await state.set_state(BookingFlow.time)
+        await call.answer()
+        return
 
     # 1) клиенту
     await call.message.edit_text(BOOKED_USER)
@@ -206,7 +219,7 @@ async def confirm(call: CallbackQuery, state: FSMContext, bot: Bot):
     # 2) админу
     admin_text = (
         "📩 Новая запись (DEMO)\n\n"
-        f"🆔 ID записи: {row_id}\n"
+        f"🆔 ID записи: {booking_id}\n"
         f"🏷 Услуга: {booking['service']}\n"
         f"📅 Дата: {booking['date']}\n"
         f"⏰ Время: {booking['time']}\n"
