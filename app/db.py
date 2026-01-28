@@ -25,11 +25,30 @@ CREATE TABLE IF NOT EXISTS bookings (
   calendar_event_id TEXT             -- eventId from Google Calendar (for the slot event we manage)
 );
 
+CREATE TABLE IF NOT EXISTS services (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,         -- Service name (e.g., "🏓 Падел (групповая)")
+  capacity INTEGER NOT NULL,         -- Max participants
+  enabled BOOLEAN DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS admins (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tg_user_id TEXT NOT NULL UNIQUE,   -- Telegram user ID
+  username TEXT,                     -- Telegram username
+  is_owner BOOLEAN DEFAULT 0,        -- Only owner can manage admins
+  created_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_bookings_slot
 ON bookings(service, date, time, status);
 
 CREATE INDEX IF NOT EXISTS idx_bookings_phone
 ON bookings(phone);
+
+CREATE INDEX IF NOT EXISTS idx_admins_user_id
+ON admins(tg_user_id);
 
 """
 

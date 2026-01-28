@@ -7,7 +7,7 @@ from app.db import init_db
 from app.repo import Repo
 from app.calendar_publisher import CalendarPublisher
 from app.logger import setup_logger
-from app.handlers import start, booking 
+from app.handlers import start, booking, admin
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -33,6 +33,12 @@ async def main():
     repo = Repo(config.db_path)
     logger.debug("Repository initialized")
     
+    # Initialize owner admin
+    owner_admin_id = str(config.owner_admin_id)
+    if not await repo.is_admin(owner_admin_id):
+        logger.info(f"Initializing owner admin: {owner_admin_id}")
+        await repo.add_admin(owner_admin_id, is_owner=True)
+    
     publisher = CalendarPublisher(
         repo=repo,
         calendar_id=config.gcal_calendar_id,
@@ -53,6 +59,7 @@ async def main():
     # include routers...
     dp.include_router(start.router)
     dp.include_router(booking.router)
+    dp.include_router(admin.router)
     logger.debug("Routers registered")
 
     logger.info("Starting polling...")

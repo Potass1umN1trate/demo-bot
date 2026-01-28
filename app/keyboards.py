@@ -128,3 +128,33 @@ def week_picker_kb(page: int = 0, weeks_ahead: int = 3) -> InlineKeyboardMarkup:
         kb.row(*row)
 
     return kb.as_markup()
+
+
+def admin_main_kb(is_owner: bool = False) -> InlineKeyboardMarkup:
+    """Admin main menu keyboard"""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="📋 Управлять записями", callback_data="manage_bookings")
+    kb.button(text="⚙️ Управлять услугами", callback_data="manage_services")
+    if is_owner:
+        kb.button(text="👥 Управлять админами", callback_data="manage_admins")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def admin_manage_kb() -> InlineKeyboardMarkup:
+    """Admin management keyboard"""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="➕ Добавить", callback_data="admin_add")
+    kb.button(text="✏️ Редактировать", callback_data="admin_edit")
+    kb.button(text="🗑 Удалить", callback_data="admin_delete")
+    kb.button(text="⬅️ Назад", callback_data="admin_back")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def cancel_kb() -> InlineKeyboardMarkup:
+    """Cancel keyboard"""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬅️ Назад", callback_data="cancel")
+    kb.adjust(1)
+    return kb.as_markup()

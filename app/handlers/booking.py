@@ -248,7 +248,7 @@ async def confirm(call: CallbackQuery, state: FSMContext, bot: Bot):
         logger.error(f"Calendar update failed for slot {service} {date_str} {time_str}: {e}", exc_info=True)
         try:
             await bot.send_message(
-                chat_id=config.admin_id,
+                chat_id=config.owner_admin_id,
                 text=f"⚠️ Calendar update failed for slot {service} {date_str} {time_str}: {e}"
             )
         except Exception as notify_error:
@@ -271,7 +271,7 @@ async def confirm(call: CallbackQuery, state: FSMContext, bot: Bot):
         f"👤 TG user_id: {user_id}"
     )
     try:
-        await bot.send_message(chat_id=config.admin_id, text=admin_text)
+        await bot.send_message(chat_id=config.owner_admin_id, text=admin_text)
         logger.info(f"Admin notified about booking {booking_id}")
     except Exception as e:
         logger.error(f"Failed to notify admin about booking {booking_id}: {e}")
