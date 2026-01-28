@@ -1,63 +1,63 @@
-import sqlite3
-from typing import Dict, Any
+import os
+import aiosqlite
+import logging
 
+logger = logging.getLogger(__name__)
 
-def init_db(db_path: str) -> None:
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
+SCHEMA_SQL = """
+PRAGMA journal_mode=WAL;
 
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS bookings (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        created_at TEXT DEFAULT (datetime('now')),
-        user_id INTEGER NOT NULL,
-        service TEXT NOT NULL,
-        date TEXT NOT NULL,
-        time TEXT NOT NULL,
-        name TEXT NOT NULL,
-        phone TEXT NOT NULL
-    )
-    """)
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 
-    conn.commit()
-    conn.close()
+CREATE TABLE IF NOT EXISTS bookings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  created_at TEXT NOT NULL,          -- ISO datetime
+  status TEXT NOT NULL,              -- active/cancelled
+  service TEXT NOT NULL,
+  date TEXT NOT NULL,                -- dd.MM.yyyy
+  time TEXT NOT NULL,                -- HH:mm
+  name TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  tg_user_id TEXT,
+  calendar_event_id TEXT             -- eventId from Google Calendar (for the slot event we manage)
+);
 
+CREATE INDEX IF NOT EXISTS idx_bookings_slot
+ON bookings(service, date, time, status);
 
-def insert_booking(db_path: str, booking: Dict[str, Any]) -> int:
-    """
-    booking keys: user_id, service, date, time, name, phone
-    Returns inserted row id.
-    """
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
+CREATE INDEX IF NOT EXISTS idx_bookings_phone
+ON bookings(phone);
 
-    cur.execute("""
-    INSERT INTO bookings (user_id, service, date, time, name, phone)
-    VALUES (?, ?, ?, ?, ?, ?)
-    """, (
-        booking["user_id"],
-        booking["service"],
-        booking["date"],
-        booking["time"],
-        booking["name"],
-        booking["phone"],
-    ))
+"""
 
-    conn.commit()
-    row_id = cur.lastrowid
-    conn.close()
-    return row_id
+DEFAULT_SETTINGS = {
+    "cap_padel_group": "3",
+    "cap_padel_ind": "1",
+    "cap_fitness": "10",
+    "work_start_hour": "10",
+    "work_end_hour": "22",
+    "slot_minutes": "60",
+}
 
-def count_bookings_for_slot(db_path: str, service: str, date_str: str, time_str: str) -> int:
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
+async def init_db(db_path: str) -> None:
+    logger.info(f"Initializing database at {db_path}")
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
-    cur.execute("""
-        SELECT COUNT(*)
-        FROM bookings
-        WHERE service = ? AND date = ? AND time = ?
-    """, (service, date_str, time_str))
+    async with aiosqlite.connect(db_path) as db:
+        logger.debug("Executing database schema")
+        await db.executescript(SCHEMA_SQL)
 
-    (cnt,) = cur.fetchone()
-    conn.close()
-    return int(cnt)
+        # seed defaults if missing
+        for k, v in DEFAULT_SETTINGS.items():
+            await db.execute(
+                "INSERT OR IGNORE INTO settings(key, value) VALUES(?, ?)",
+                (k, v),
+            )
+            logger.debug(f"Set default setting: {k}={v}")
+
+        await db.commit()
+    
+    logger.info("Database initialization completed")
